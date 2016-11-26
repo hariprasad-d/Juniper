@@ -5,12 +5,14 @@ from __future__ import print_function
 from __future__ import unicode_literals
 
 import pexpect, fileinput
-import sys, argparse, getpass
+import sys, argparse, getpass, re
 
 
 def print_console_op(child):
-    sys.stdout.write (child.before)
-    sys.stdout.write (child.after)
+    #sys.stdout.write (child.before)
+    #sys.stdout.write (child.after)
+    print (child.before)
+    print (child.after)
 
 def update_ssh_know_host(child, host):
     print(child.before)
@@ -37,7 +39,7 @@ def main(argv):
     parser.add_argument("-t","--telnet", help="telnet to the serial console for the given host",
                                 default=False, action='store_true')
     args = parser.parse_args()       
-    print("spawing scp session to [%s] for user [%s]" % (args.host, args.user))
+    #print("spawing scp session to [%s] for user [%s]" % (args.host, args.user))
 
     if args.user == 'regress':
         passwrd = 'MaRtInI'
@@ -48,14 +50,55 @@ def main(argv):
     else:
        passwrd = getpass.getpass('Password:')
 
-    spawn_ssh_session(argv, args, passwrd)   
+    if args.telnet is True:
+        spawn_telnet_session(argv, args, passwrd)
+    else:
+        matchobj = re.search( r'-con$', args.host, re.M|re.I)
+        if matchobj:
+            spawn_telnet_session(argv, args, passwrd)
+        else:
+            spawn_ssh_session(argv, args, passwrd)
+
+def spawn_telnet_session(argv, args, passwrd):
+    print("spawing telnet session to [%s] for user [%s]" % (args.host, args.user))
+    child = pexpect.spawnu('telnet -l %s %s' % (args.user, args.host))
+    child.sendline("\n")
+    #child.sendline("\n")
+    #print(child.before)
+    try:
+        while True:
+            index = child.expect(['(?i)password', 'login:'], timeout=15)
+            if index == 0:
+                print_console_op(child)
+                child.sendline(passwrd)
+                child.interact()
+                break
+            elif index == 1:
+                print_console_op(child)
+                child.sendline(args.user)
+            else:
+                print_console_op(child)
+                sys.exit()
+    except pexpect.TIMEOUT:
+        print (' exception handler -- TIMEOUT!!!')
+        sys.exit()
+
+    # The rest is not strictly necessary. This just demonstrates a few functions.
+    # This makes sure the child is dead; although it would be killed when Python exits.
+    if child.isalive():
+        print('Left interactve mode.')
+        child.sendline('bye') # Try to ask ftp child to exit.
+        child.close()
+    # Print the final state of the child. Normally isalive() should be FALSE.
+    if child.isalive():
+        print('Child did not exit gracefully.')
+    else:
+        print('Child exited gracefully.')
 
 
 def spawn_ssh_session(argv, args, passwrd):
-    if args.telnet is True:
-        child = pexpect.spawnu('telnet -l %s %s' % (args.user, args.host))
-    else:
-        child = pexpect.spawnu('ssh %s@%s' % (args.user, args.host))
+    print("spawing scp session to [%s] for user [%s]" % (args.host, args.user))
+    child = pexpect.spawnu('ssh %s@%s' % (args.user, args.host))
 
     try:
         while True:
